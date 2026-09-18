@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Field Inspector Weather & Spec Dashboard</title>
+  <style>
+    :root {
+      --bg: #09121d;
+      --card-bg: #ffffff;
+      --card-text: #0f172a;
+      --accent: #0284c7;
+      --border: #e2e8f0;
+      --status-go: #15803d;
+      --status-warn: #d97706;
+      --status-nogo: #dc2626;
+      --alert-bg: #fee2e2;
+      --alert-border: #ef4444;
+      --alert-text: #991b1b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--card-text); padding: 10px; padding-bottom: 60px; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; color: white; padding: 8px 4px 12px; }
+    header h1 { font-size: 1.05rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    header span { font-size: 0.72rem; color: #94a3b8; }
+
+    /* Active NWS Alert Banner */
+    #alert-banner { display: none; background: var(--alert-bg); border-left: 5px solid var(--alert-border); color: var(--alert-text); padding: 10px 12px; border-radius: 8px; margin-bottom: 10px; font-size: 0.8rem; font-weight: 600; line-height: 1.3; }
+
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+    .card { background: var(--card-bg); border-radius: 12px; padding: 10px 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.25); }
+    .card.full { grid-column: span 2; }
+    
+    .label { font-size: 0.68rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 3px; display: flex; justify-content: space-between; align-items: center; }
+    .value { font-size: 1.25rem; font-weight: 800; color: #0f172a; }
+    .subtext { font-size: 0.72rem; color: #64748b; margin-top: 2px; }
+
+    /* Spec & Limit Badges */
+    .status-badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 700; color: white; margin-right: 4px; margin-top: 4px; }
+    .bg-go { background: var(--status-go); }
+    .bg-warn { background: var(--status-warn); }
+    .bg-nogo { background: var(--status-nogo); }
+
+    /* Tables */
+    .data-table { width: 100%; border-collapse: collapse; font-size: 0.74rem; text-align: left; margin-top: 5px; }
+    .data-table th { color: #64748b; font-weight: 600; padding: 5px 2px; border-bottom: 1px solid var(--border); }
+    .data-table td { padding: 6px 2px; border-bottom: 1px solid #f1f5f9; }
+    .table-scroll { max-height: 220px; overflow-y: auto; }
+
+    .radar-frame { width: 100%; height: 260px; border: none; border-radius: 8px; margin-top: 6px; }
+    .btn { background: var(--accent); color: white; border: none; padding: 6px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 700; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <h1>Field Inspector Station</h1>
+      <span id="last-updated">Connecting to weather sensors...</span>
+    </div>
+    <button class="btn" onclick="fetchFullStationData()">Refresh</button>
+  </header>
+
+  <!-- Live Active NWS Alerts -->
+  <div id="alert-banner"></div>
+
+  <!-- Operational Spec Compliance Windows -->
+  <div class="card full" style="margin-bottom: 8px; border-left: 5px solid var(--accent);">
+    <div class="label">Field Specification Check & Lift/Pour Compliance</div>
+    <div id="ops-summary" style="display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px;">
+      <span class="status-badge bg-warn">Evaluating specs...</span>
+    </div>
+  </div>
+
+  <!-- Daylight Working Window (+30m / -30m) -->
+  <div class="card full" style="margin-bottom: 8px;">
+    <div class="label">Available Daylight Window (+30m Dawn / -30m Dusk)</div>
+    <div class="value" id="work-hours">--:-- to --:--</div>
+    <div class="subtext" id="sun-raw">Sunrise: --:-- | Sunset: --:--</div>
+  </div>
+
+  <!-- Primary Jobsite Parameters -->
+  <div class="grid">
+    <div class="card">
+      <div class="label">Wind / Gusts</div>
+      <div class="value" id="wind-val">-- mph</div>
+      <div class="subtext" id="gust-val">Gusts: -- mph</div>
+    </div>
+    <div class="card">
+      <div class="label">Subgrade Soil Temp</div>
+      <div class="value" id="soil-temp-val">--°F</div>
+      <div class="subtext" id="soil-moist-val">Moist: -- m³/m³</div>
+    </div>
+    <div class="card">
+      <div class="label">ACI 305R Evap Rate</div>
+      <div class="value" id="evap-val">-- lb/ft²/hr</div>
+      <div class="subtext" id="evap-status">Plastic Shrink: --</div>
+    </div>
+    <div class="card">
+      <div class="label">Humidity / Dew Pt</div>
+      <div class="value" id="hum-val">--%</div>
+      <div class="subtext" id="dew-val">Dew Pt: --°F</div>
+    </div>
+    <div class="card">
+      <div class="label">Barometer / UV</div>
+      <div class="value" id="press-val">-- inHg</div>
+      <div class="subtext" id="uv-val">UV Index: --</div>
+    </div>
+    <div class="card">
+      <div class="label">Precip Prob / Ground</div>
+      <div class="value" id="pop-val">--%</div>
+      <div class="subtext" id="temp-val">Air: --°F</div>
+    </div>
+  </div>
+
+  <!-- Interactive Past/Future Radar -->
+  <div class="card full" style="margin-bottom: 8px;">
+    <div class="label">Live, Past & Future Radar (Precip / Snow Track)</div>
+    <iframe id="radar-widget" class="radar-frame" src=""></iframe>
+  </div>
+
+  <!-- Past 7 Days Inspection / Weather Delay Log -->
+  <div class="card full" style="margin-bottom: 8px;">
+    <div class="label">Prior 7 Days Log (Rain, Snow, High/Low)</div>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Condition</th>
+          <th>High / Low</th>
+          <th>Rain</th>
+          <th>Snow</th>
+        </tr>
+      </thead>
+      <tbody id="history-body">
+        <tr><td colspan="5">Pulling historical logs...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- 48-Hour Forward Forecast & Snow Projection -->
+  <div class="card full">
+    <div class="label">48-Hour Forward Hourly Forecast</div>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Air / Soil</th>
+            <th>Wind (Gust)</th>
+            <th>Rain / Snow</th>
+            <th>Evap / Spec</th>
+          </tr>
+        </thead>
+        <tbody id="forecast-body">
+          <tr><td colspan="5">Loading forecast...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    // Set your inspection project coordinates (Muscatine, IA default)
+    const LAT = 41.4245;
+    const LON = -91.0432;
+
+    function weatherCodeToText(code) {
+      const codes = {
+        0: 'Clear', 1: 'Mostly Clear', 2: 'Partly Cloudy', 3: 'Overcast',
+        45: 'Fog', 48: 'Freezing Fog', 51: 'Lt Drizzle', 53: 'Drizzle',
+        61: 'Lt Rain', 63: 'Rain', 65: 'Hvy Rain', 71: 'Lt Snow',
+        73: 'Snow', 75: 'Hvy Snow', 77: 'Snow Grains', 80: 'Showers',
+        85: 'Snow Showers', 95: 'Thunderstorm'
+      };
+      return codes[code] || 'Cloudy';
+    }
+
+    function formatTime(iso) {
+      return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    }
+
+    function formatDate(iso) {
+      return new Date(iso).toLocaleDateString([], { weekday: 'short', month: 'numeric', day: 'numeric' });
+    }
+
+    // ACI 305R Evaporation Rate Equation: E = (Tc^2.5 - r * Ta^2.5) * (1 + 0.4V) * 10^-6
+    // Tc: Concrete Temp (°F), Ta: Air Temp (°F), r: Relative Humidity (0-1), V: Wind (mph)
+    function calculateEvaporationRate(airTempF, rhPercent, windMph, concreteTempF = null) {
+      const Tc = concreteTempF !== null ? concreteTempF : airTempF; // Defaults to air temp if unmeasured
+      const Ta = airTempF;
+      const r = rhPercent / 100;
+      const V = windMph;
+
+      if (Tc <= 0 || Ta <= 0) return 0;
+      const term = Math.pow(Tc, 2.5) - (r * Math.pow(Ta, 2.5));
+      if (term <= 0) return 0;
+
+      const E = term * (1 + 0.4 * V) * 1e-6;
+      return Math.max(0, E);
+    }
+
+    // Fetch live National Weather Service active alerts for project coordinates
+    async function fetchNWSAlerts() {
+      try {
+        const res = await fetch(`https://api.weather.gov/alerts/active?point=${LAT},${LON}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        const banner = document.getElementById('alert-banner');
+        
+        if (data.features && data.features.length > 0) {
+          const alert = data.features[0].properties;
+          banner.style.display = 'block';
+          banner.innerHTML = `⚠️ <strong>NWS ALERT:</strong> ${alert.event} (${alert.headline || alert.instruction || 'See local office advisory'})`;
+        } else {
+          banner.style.display = 'none';
+        }
+      } catch (e) {
+        console.warn('NWS alert query skipped:', e);
+      }
+    }
+
+    async function fetchFullStationData() {
+      try {
+        // Embed interactive radar with past track and 30-minute future nowcast
+        document.getElementById('radar-widget').src = 
+          `https://www.rainviewer.com/map.html?loc=${LAT},${LON},9&oCS=1&c=1&o=85&layer=radar&sm=1&sn=1`;
+
+        fetchNWSAlerts();
+
+        const url = `https://api.open-meteo.com/v1/forecast?latitude=${LAT}&longitude=${LON}` +
+          `&current=temperature_2m,relative_humidity_2m,dew_point_2m,surface_pressure,wind_speed_10m,wind_gusts_10m,weather_code` +
+          `&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,precipitation,snowfall,wind_speed_10m,wind_gusts_10m,soil_temperature_0cm,soil_moisture_0_to_1cm` +
+          `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,snowfall_sum,sunrise,sunset,uv_index_max` +
+          `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&past_days=7&forecast_days=3&timezone=auto`;
+
+        const res = await fetch(url);
+        const data = await res.json();
+
+        const currentAirTemp = Math.round(data.current.temperature_2m);
+        const currentRH = Math.round(data.current.relative_humidity_2m);
+        const currentWind = Math.round(data.current.wind_speed_10m);
+        const currentGust = Math.round(data.current.wind_gusts_10m);
+        const currentDew = Math.round(data.current.dew_point_2m);
+        const currentPress = (data.current.surface_pressure * 0.02953).toFixed(2);
+        const currentSoilTemp = Math.round(data.hourly.soil_temperature_0cm[168]);
+        const currentSoilMoist = data.hourly.soil_moisture_0_to_1cm[168];
+        const currentPop = data.hourly.precipitation_probability[168] || 0;
+
+        // Current Metrics
+        document.getElementById('wind-val').innerText = `${currentWind} mph`;
+        document.getElementById('gust-val').innerText = `Gusts: ${currentGust} mph`;
+        document.getElementById('hum-val').innerText = `${currentRH}%`;
+        document.getElementById('dew-val').innerText = `Dew Pt: ${currentDew}°F`;
+        document.getElementById('press-val').innerText = `${currentPress} inHg`;
+        document.getElementById('soil-temp-val').innerText = `${currentSoilTemp}°F`;
+        document.getElementById('soil-moist-val').innerText = `Moist: ${currentSoilMoist} m³/m³`;
+        document.getElementById('pop-val').innerText = `${currentPop}%`;
+        document.getElementById('temp-val').innerText = `Air: ${currentAirTemp}°F`;
+        document.getElementById('uv-val').innerText = `UV Index: ${data.daily.uv_index_max[7] ?? '--'}`;
+
+        // ACI 305R Evaporation Rate
+        const evapRate = calculateEvaporationRate(currentAirTemp, currentRH, currentWind);
+        const evapElem = document.getElementById('evap-val');
+        const evapStatus = document.getElementById('evap-status');
+        evapElem.innerText = `${evapRate.toFixed(3)} lb/ft²`;
+
+        if (evapRate >= 0.20) {
+          evapElem.style.color = 'var(--status-nogo)';
+          evapStatus.innerHTML = '<span style="color:var(--status-nogo); font-weight:700;">CRITICAL (&ge;0.20): Fogging/Windbreak Required</span>';
+        } else if (evapRate >= 0.10) {
+          evapElem.style.color = 'var(--status-warn)';
+          evapStatus.innerHTML = '<span style="color:var(--status-warn); font-weight:700;">MODERATE (0.10-0.20): Shrinkage Precautions Advised</span>';
+        } else {
+          evapElem.style.color = 'var(--card-text)';
+          evapStatus.innerHTML = '<span style="color:var(--status-go); font-weight:700;">LOW Risk (&lt;0.10)</span>';
+        }
+
+        // Available Work Window (+30m Dawn / -30m Dusk)
+        const rise = new Date(data.daily.sunrise[7]);
+        const set = new Date(data.daily.sunset[7]);
+        const workStart = new Date(rise.getTime() + 30 * 60000);
+        const workEnd = new Date(set.getTime() - 30 * 60000);
+
+        document.getElementById('work-hours').innerText = 
+          `${workStart.toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})} to ${workEnd.toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}`;
+        document.getElementById('sun-raw').innerText = 
+          `Sunrise: ${rise.toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})} | Sunset: ${set.toLocaleTimeString([], {hour: 'numeric', minute:'2-digit'})}`;
+
+        // Field Spec Compliance Logic
+        let badges = '';
+        if (currentSoilTemp < 36 || currentAirTemp < 40) {
+          badges += `<span class="status-badge bg-nogo">Cold Subgrade/Air (&lt;40°F)</span>`;
+        } else if (currentAirTemp > 90) {
+          badges += `<span class="status-badge bg-warn">High Thermal Spec (&gt;90°F)</span>`;
+        } else {
+          badges += `<span class="status-badge bg-go">Paving / Pouring Temps OK</span>`;
+        }
+
+        if (currentGust >= 25) {
+          badges += `<span class="status-badge bg-nogo">Lift/Crane Cutoff (&ge;25 mph)</span>`;
+        } else if (currentGust >= 18) {
+          badges += `<span class="status-badge bg-warn">Wind Caution (&gt;18 mph)</span>`;
+        } else {
+          badges += `<span class="status-badge bg-go">Wind Safe</span>`;
+        }
+
+        if (currentPop >= 40) {
+          badges += `<span class="status-badge bg-warn">Precip Warning (${currentPop}%)</span>`;
+        } else {
+          badges += `<span class="status-badge bg-go">Dry Surface Window</span>`;
+        }
+        document.getElementById('ops-summary').innerHTML = badges;
+
+        // Past 7 Days Rain & Snow History Log
+        let histRows = '';
+        for (let i = 0; i < 7; i++) {
+          histRows += `<tr>
+            <td><strong>${formatDate(data.daily.time[i])}</strong></td>
+            <td>${weatherCodeToText(data.daily.weather_code[i])}</td>
+            <td>${Math.round(data.daily.temperature_2m_max[i])}° / ${Math.round(data.daily.temperature_2m_min[i])}°</td>
+            <td>${data.daily.precipitation_sum[i].toFixed(2)}"</td>
+            <td>${(data.daily.snowfall_sum[i] || 0).toFixed(1)}"</td>
+          </tr>`;
+        }
+        document.getElementById('history-body').innerHTML = histRows;
+
+        // 48-Hour Forecast with Hourly Snow & ACI Evaporation
+        let fcastRows = '';
+        const startIdx = 168; // Index representing today at 00:00
+        for (let i = startIdx; i < startIdx + 48; i += 2) {
+          const t = Math.round(data.hourly.temperature_2m[i]);
+          const st = Math.round(data.hourly.soil_temperature_0cm[i]);
+          const rh = data.hourly.relative_humidity_2m[i];
+          const w = Math.round(data.hourly.wind_speed_10m[i]);
+          const g = Math.round(data.hourly.wind_gusts_10m[i]);
+          const pop = data.hourly.precipitation_probability[i];
+          const snow = (data.hourly.snowfall[i] || 0).toFixed(1);
+          const fEvap = calculateEvaporationRate(t, rh, w);
+
+          let status = '<span style="color:var(--status-go); font-weight:700;">GO</span>';
+          if (pop > 40 || g >= 25 || t < 38 || st < 36 || snow > 0 || fEvap >= 0.20) {
+            status = '<span style="color:var(--status-nogo); font-weight:700;">LIMIT</span>';
+          }
+
+          fcastRows += `<tr>
+            <td>${formatDate(data.hourly.time[i])} ${formatTime(data.hourly.time[i])}</td>
+            <td>${t}° / ${st}°</td>
+            <td>${w} (${g})</td>
+            <td>${pop}% / ${snow}"</td>
+            <td>${fEvap.toFixed(2)} | ${status}</td>
+          </tr>`;
+        }
+        document.getElementById('forecast-body').innerHTML = fcastRows;
+        document.getElementById('last-updated').innerText = `Updated ${new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'})}`;
+
+      } catch (err) {
+        document.getElementById('last-updated').innerText = 'Data connection error.';
+        console.error(err);
+      }
+    }
+
+    fetchFullStationData();
+  </script>
+</body>
+</html>
